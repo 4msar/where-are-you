@@ -6,6 +6,17 @@ import { generateUsername, generateDisplayName } from "@/lib/username";
 import type { UserLocation } from "@/lib/kv";
 import { UserProfile } from "@/components/UserProfile";
 import { Toaster } from "@/components/ui/toaster";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
 import { MapPin, Loader2, AlertCircle, RefreshCw, User } from "lucide-react";
 
@@ -50,6 +61,10 @@ export function LocationPage({ routeUsername }: LocationPageProps) {
     const [isUpdating, setIsUpdating] = useState(false);
     const [profileHydrated, setProfileHydrated] = useState(false);
     const [canShareLocation, setCanShareLocation] = useState(true);
+    const [onboardingOpen, setOnboardingOpen] = useState(false);
+    const [onboardingUsername, setOnboardingUsername] = useState("");
+    const [onboardingError, setOnboardingError] = useState("");
+    const [onboardingLoading, setOnboardingLoading] = useState(false);
     const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const userRef = useRef<UserIdentity | null>(null);
@@ -242,52 +257,83 @@ export function LocationPage({ routeUsername }: LocationPageProps) {
         [saveLocation],
     );
 
+    const hydrateLandingUser = useCallback(async (inputUsername?: string) => {
+        const selectedUsername = normalizeUsername(inputUsername);
+        const username = selectedUsername ?? generateUsername();
+        const fallbackDisplayName = generateDisplayName();
+
+        localStorage.setItem(USER_STORAGE_KEY, username);
+        setUser({
+            username,
+            displayName: fallbackDisplayName,
+            avatarUrl: "",
+        });
+        setCanShareLocation(true);
+        setCurrentLocation(null);
+
+        try {
+            const res = await fetch(
+                `/api/user?username=${encodeURIComponent(username)}`,
+            );
+            if (!res.ok) return;
+
+            const data = await res.json();
+            if (data.exists && data.user) {
+                setUser({
+                    username: data.user.username,
+                    displayName: data.user.displayName || fallbackDisplayName,
+                    avatarUrl: data.user.avatarUrl || "",
+                });
+                setCurrentLocation(data.user as UserLocation);
+            }
+        } catch {
+            // Keep fallback profile if KV read fails.
+        } finally {
+            setProfileHydrated(true);
+        }
+    }, []);
+
+    const handleContinueAsNew = useCallback(async () => {
+        setOnboardingError("");
+        setOnboardingLoading(true);
+        try {
+            await hydrateLandingUser();
+            setOnboardingOpen(false);
+        } finally {
+            setOnboardingLoading(false);
+        }
+    }, [hydrateLandingUser]);
+
+    const handleContinueAsExisting = useCallback(async () => {
+        const normalized = normalizeUsername(onboardingUsername);
+        if (!normalized) {
+            setOnboardingError(
+                "Enter a valid username using lowercase letters, numbers, or hyphens.",
+            );
+            return;
+        }
+
+        setOnboardingError("");
+        setOnboardingLoading(true);
+        try {
+            await hydrateLandingUser(normalized);
+            setOnboardingOpen(false);
+        } finally {
+            setOnboardingLoading(false);
+        }
+    }, [hydrateLandingUser, onboardingUsername]);
+
     useEffect(() => {
         const storedUsername = normalizeUsername(
             localStorage.getItem(USER_STORAGE_KEY),
         );
 
         if (!routeUsernameNormalized) {
-            const username = storedUsername ?? generateUsername();
-            localStorage.setItem(USER_STORAGE_KEY, username);
-
-            const fallbackDisplayName = generateDisplayName();
-            setUser({
-                username,
-                displayName: fallbackDisplayName,
-                avatarUrl: "",
-            });
             setCanShareLocation(true);
-
-            const hydrateProfileFromKv = async () => {
-                try {
-                    const res = await fetch(
-                        `/api/user?username=${encodeURIComponent(username)}`,
-                    );
-                    if (!res.ok) return;
-
-                    const data = await res.json();
-                    if (data.exists && data.user) {
-                        setUser((prev) =>
-                            prev
-                                ? {
-                                      ...prev,
-                                      displayName:
-                                          data.user.displayName ||
-                                          prev.displayName,
-                                      avatarUrl: data.user.avatarUrl || "",
-                                  }
-                                : prev,
-                        );
-                    }
-                } catch {
-                    // Keep fallback profile if KV read fails.
-                } finally {
-                    setProfileHydrated(true);
-                }
-            };
-
-            void hydrateProfileFromKv();
+            setProfileHydrated(false);
+            setOnboardingUsername("");
+            setOnboardingError("");
+            setOnboardingOpen(true);
             return;
         }
 
@@ -546,6 +592,74 @@ export function LocationPage({ routeUsername }: LocationPageProps) {
         ],
     );
 
+    if (!user && !routeUsernameNormalized) {
+        return (
+            <div className="relative flex h-screen items-center justify-center bg-gray-50">
+                <Dialog open={onboardingOpen} onOpenChange={setOnboardingOpen}>
+                    <DialogContent
+                        className="sm:max-w-md [&>button]:hidden"
+                        onInteractOutside={(event) => event.preventDefault()}
+                        onEscapeKeyDown={(event) => event.preventDefault()}
+                    >
+                        <DialogHeader>
+                            <DialogTitle>
+                                Are you existing user? Enter your username!
+                            </DialogTitle>
+                            <DialogDescription>
+                                New is the default. Enter a username only if you
+                                already have one.
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="grid gap-2 py-1">
+                            <Label htmlFor="existing-username">
+                                Existing username
+                            </Label>
+                            <Input
+                                id="existing-username"
+                                placeholder="your-username"
+                                value={onboardingUsername}
+                                onChange={(event) => {
+                                    setOnboardingUsername(
+                                        event.target.value.toLowerCase(),
+                                    );
+                                    if (onboardingError) {
+                                        setOnboardingError("");
+                                    }
+                                }}
+                                maxLength={32}
+                                disabled={onboardingLoading}
+                            />
+                            {onboardingError && (
+                                <p className="text-xs text-red-500">
+                                    {onboardingError}
+                                </p>
+                            )}
+                        </div>
+
+                        <DialogFooter>
+                            <Button
+                                variant="outline"
+                                onClick={handleContinueAsNew}
+                                disabled={onboardingLoading}
+                            >
+                                New
+                            </Button>
+                            <Button
+                                onClick={handleContinueAsExisting}
+                                disabled={onboardingLoading}
+                            >
+                                {onboardingLoading
+                                    ? "Continuing..."
+                                    : "Continue"}
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+            </div>
+        );
+    }
+
     if (!user) {
         return (
             <div className="flex items-center justify-center h-screen bg-gray-50">
@@ -582,40 +696,42 @@ export function LocationPage({ routeUsername }: LocationPageProps) {
                 </div>
             )}
 
-            <div className="absolute top-4 left-4 right-4 flex items-start justify-between gap-3 pointer-events-none">
-                <div className="flex items-center gap-2 bg-white/90 backdrop-blur-sm rounded-full px-4 py-2 shadow-md border border-gray-100 pointer-events-auto">
-                    <MapPin className="w-4 h-4 text-blue-600" />
-                    <span className="font-bold text-gray-800 text-sm">
-                        Where Are You
-                    </span>
-                </div>
+            <div className="absolute inset-x-0 top-0 z-20 p-3 sm:p-4 pointer-events-none">
+                <div className="mx-auto flex w-full max-w-6xl flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex w-fit items-center gap-2 rounded-full border border-gray-100 bg-white/90 px-4 py-2 shadow-md backdrop-blur-sm pointer-events-auto">
+                        <MapPin className="w-4 h-4 text-blue-600" />
+                        <span className="font-bold text-gray-800 text-sm">
+                            Where Are You
+                        </span>
+                    </div>
 
-                <div className="pointer-events-auto">
-                    {canShareLocation ? (
-                        <UserProfile
-                            username={user.username}
-                            displayName={user.displayName}
-                            avatarUrl={user.avatarUrl}
-                            onUpdate={handleProfileUpdate}
-                        />
-                    ) : (
-                        <div className="flex items-center gap-2 bg-white/90 backdrop-blur-sm rounded-full px-4 py-2 shadow-md border border-gray-100">
-                            <User className="w-4 h-4 text-gray-500" />
-                            <div className="leading-tight">
-                                <p className="text-xs text-gray-500 font-medium">
-                                    Viewing
-                                </p>
-                                <p className="text-sm font-semibold text-gray-800">
-                                    @{user.username}
-                                </p>
+                    <div className="pointer-events-auto w-full sm:w-auto sm:self-auto">
+                        {canShareLocation ? (
+                            <UserProfile
+                                username={user.username}
+                                displayName={user.displayName}
+                                avatarUrl={user.avatarUrl}
+                                onUpdate={handleProfileUpdate}
+                            />
+                        ) : (
+                            <div className="flex items-center gap-2 bg-white/90 backdrop-blur-sm rounded-full px-4 py-2 shadow-md border border-gray-100 w-full sm:w-auto">
+                                <User className="w-4 h-4 text-gray-500" />
+                                <div className="leading-tight min-w-0">
+                                    <p className="text-xs text-gray-500 font-medium">
+                                        Viewing
+                                    </p>
+                                    <p className="text-sm font-semibold text-gray-800 truncate">
+                                        @{user.username}
+                                    </p>
+                                </div>
                             </div>
-                        </div>
-                    )}
+                        )}
+                    </div>
                 </div>
             </div>
 
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 pointer-events-none">
-                <div className="flex items-center gap-2 bg-white/90 backdrop-blur-sm rounded-full px-4 py-2 shadow-md border border-gray-100 text-sm">
+            <div className="absolute inset-x-0 bottom-4 z-20 px-3 pointer-events-none sm:bottom-6">
+                <div className="mx-auto flex w-full max-w-xl flex-wrap items-center justify-center gap-2 rounded-2xl border border-gray-100 bg-white/90 px-3 py-2 text-xs shadow-md backdrop-blur-sm sm:rounded-full sm:px-4 sm:text-sm">
                     {!canShareLocation && currentLocation && (
                         <>
                             <span className="w-2.5 h-2.5 bg-blue-500 rounded-full inline-block" />

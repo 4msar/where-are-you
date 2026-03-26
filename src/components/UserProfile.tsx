@@ -137,7 +137,7 @@ export function UserProfile({
 
     return (
         <>
-            <div className="flex items-center gap-2 bg-white/90 backdrop-blur-sm rounded-full px-4 py-2 shadow-md border border-gray-100">
+            <div className="flex w-full min-w-0 items-center gap-2 rounded-full border border-gray-100 bg-white/90 px-4 py-2 shadow-md backdrop-blur-sm sm:w-auto sm:max-w-xs">
                 {showAvatar ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -156,11 +156,11 @@ export function UserProfile({
                         )}
                     </div>
                 )}
-                <div className="leading-tight">
+                <div className="leading-tight min-w-0 flex-1 sm:flex-none">
                     <p className="text-xs text-gray-500 font-medium">
                         @{username}
                     </p>
-                    <p className="text-sm font-semibold text-gray-800">
+                    <p className="text-sm font-semibold text-gray-800 truncate">
                         {displayName}
                     </p>
                 </div>
