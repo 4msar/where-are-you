@@ -18,7 +18,14 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
-import { MapPin, Loader2, AlertCircle, RefreshCw, User } from "lucide-react";
+import {
+    MapPin,
+    Loader2,
+    AlertCircle,
+    RefreshCw,
+    User,
+    Clock3,
+} from "lucide-react";
 
 const MapView = dynamic(
     () => import("@/components/MapView").then((m) => m.MapView),
@@ -29,6 +36,7 @@ const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
 const USER_STORAGE_KEY = "where-are-you:username";
 const LOCATION_UPDATE_INTERVAL = 300_000; // 5 minutes
 const IDLE_TIMEOUT_MS = 60_000; // 1 minute of inactivity before marking user as idle
+const INACTIVE_USER_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
 
 type UserPresenceStatus = "active" | "idle" | "left";
 
@@ -48,6 +56,15 @@ function normalizeUsername(value: string | null | undefined): string | null {
     return /^[a-z0-9-]+$/.test(normalized) ? normalized : null;
 }
 
+function isUserInactive(
+    lastUpdated: string,
+    now: number = Date.now(),
+): boolean {
+    const updatedAtMs = new Date(lastUpdated).getTime();
+    if (!Number.isFinite(updatedAtMs)) return true;
+    return now - updatedAtMs > INACTIVE_USER_THRESHOLD_MS;
+}
+
 export function LocationPage({ routeUsername }: LocationPageProps) {
     const routeUsernameNormalized = normalizeUsername(routeUsername);
     const [user, setUser] = useState<UserIdentity | null>(null);
@@ -65,6 +82,7 @@ export function LocationPage({ routeUsername }: LocationPageProps) {
     const [onboardingUsername, setOnboardingUsername] = useState("");
     const [onboardingError, setOnboardingError] = useState("");
     const [onboardingLoading, setOnboardingLoading] = useState(false);
+    const [showInactiveUsers, setShowInactiveUsers] = useState(false);
     const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const userRef = useRef<UserIdentity | null>(null);
@@ -604,6 +622,20 @@ export function LocationPage({ routeUsername }: LocationPageProps) {
         ],
     );
 
+    const inactiveUsersCount = allUsers.filter((entry) =>
+        isUserInactive(entry.lastUpdated),
+    ).length;
+
+    const usersForMap = showInactiveUsers
+        ? allUsers
+        : allUsers.filter((entry) => !isUserInactive(entry.lastUpdated));
+
+    const currentUserForMap = !currentLocation
+        ? null
+        : showInactiveUsers || !isUserInactive(currentLocation.lastUpdated)
+          ? currentLocation
+          : null;
+
     if (!user && !routeUsernameNormalized) {
         return (
             <div className="relative flex h-screen items-center justify-center bg-gray-50">
@@ -686,8 +718,8 @@ export function LocationPage({ routeUsername }: LocationPageProps) {
                 <div className="absolute inset-0">
                     <MapView
                         apiKey={GOOGLE_MAPS_API_KEY}
-                        currentUser={currentLocation}
-                        allUsers={allUsers}
+                        currentUser={currentUserForMap}
+                        allUsers={usersForMap}
                     />
                 </div>
             ) : (
@@ -710,11 +742,30 @@ export function LocationPage({ routeUsername }: LocationPageProps) {
 
             <div className="absolute inset-x-0 top-0 z-20 p-3 sm:p-4 pointer-events-none">
                 <div className="mx-auto flex w-full max-w-6xl flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="flex w-fit items-center gap-2 rounded-full border border-gray-100 bg-white/90 px-4 py-2 shadow-md backdrop-blur-sm pointer-events-auto">
-                        <MapPin className="w-4 h-4 text-blue-600" />
-                        <span className="font-bold text-gray-800 text-sm">
-                            Where Are You
-                        </span>
+                    <div className="flex w-fit flex-col gap-2 pointer-events-auto">
+                        <div className="flex w-fit items-center gap-2 rounded-full border border-gray-100 bg-white/90 px-4 py-2 shadow-md backdrop-blur-sm">
+                            <MapPin className="w-4 h-4 text-blue-600" />
+                            <span className="font-bold text-gray-800 text-sm">
+                                Where Are You
+                            </span>
+                        </div>
+                        <Button
+                            type="button"
+                            variant={showInactiveUsers ? "default" : "outline"}
+                            size="sm"
+                            className="w-fit rounded-full bg-white/90 shadow-md backdrop-blur-sm"
+                            onClick={() =>
+                                setShowInactiveUsers((previous) => !previous)
+                            }
+                            disabled={
+                                inactiveUsersCount === 0 && !showInactiveUsers
+                            }
+                        >
+                            <Clock3 className="h-3.5 w-3.5" />
+                            {showInactiveUsers
+                                ? `Hide inactive (${inactiveUsersCount})`
+                                : `Show inactive (${inactiveUsersCount})`}
+                        </Button>
                     </div>
 
                     <div className="pointer-events-auto w-full sm:w-auto sm:self-auto">
@@ -777,8 +828,9 @@ export function LocationPage({ routeUsername }: LocationPageProps) {
                             <>
                                 <span className="w-2.5 h-2.5 bg-green-400 rounded-full animate-pulse inline-block" />
                                 <span className="text-gray-600">
-                                    Sharing location with {allUsers.length} user
-                                    {allUsers.length !== 1 ? "s" : ""}
+                                    Sharing location with {usersForMap.length}{" "}
+                                    visible user
+                                    {usersForMap.length !== 1 ? "s" : ""}
                                 </span>
                             </>
                         )}

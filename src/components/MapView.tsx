@@ -16,6 +16,14 @@ interface MapViewProps {
     allUsers: UserLocation[];
 }
 
+const INACTIVE_USER_THRESHOLD_MS = 30 * 60 * 1000;
+
+function isUserInactive(lastUpdated: string): boolean {
+    const updatedAtMs = new Date(lastUpdated).getTime();
+    if (!Number.isFinite(updatedAtMs)) return true;
+    return Date.now() - updatedAtMs > INACTIVE_USER_THRESHOLD_MS;
+}
+
 function UserMarker({
     user,
     isCurrentUser,
@@ -28,6 +36,7 @@ function UserMarker({
     const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null);
     const hasAvatar =
         Boolean(user.avatarUrl) && failedAvatarUrl !== user.avatarUrl;
+    const inactive = isUserInactive(user.lastUpdated);
 
     return (
         <>
@@ -41,7 +50,9 @@ function UserMarker({
                     className={`relative flex items-center justify-center w-10 h-10 rounded-full border-2 shadow-md cursor-pointer transition-transform hover:scale-110 ${
                         isCurrentUser
                             ? "bg-blue-600 border-blue-300"
-                            : "bg-white border-gray-300"
+                            : inactive
+                              ? "bg-gray-200 border-gray-400"
+                              : "bg-white border-gray-300"
                     }`}
                 >
                     {hasAvatar ? (
@@ -93,6 +104,11 @@ function UserMarker({
                         {isCurrentUser && (
                             <p className="text-xs text-blue-600 font-medium mt-1">
                                 📍 You are here
+                            </p>
+                        )}
+                        {inactive && (
+                            <p className="text-xs text-amber-700 font-medium mt-1">
+                                Inactive
                             </p>
                         )}
                         <p className="text-xs text-gray-400 mt-1">
