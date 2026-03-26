@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { saveUserLocation, getAllUserLocations } from "@/lib/r2";
+import { saveUserLocation, getAllUserLocations } from "@/lib/kv";
 
 export async function GET() {
   try {

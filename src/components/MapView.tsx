@@ -8,7 +8,7 @@ import {
   useAdvancedMarkerRef,
 } from "@vis.gl/react-google-maps";
 import { useState } from "react";
-import type { UserLocation } from "@/lib/r2";
+import type { UserLocation } from "@/lib/kv";
 
 interface MapViewProps {
   apiKey: string;

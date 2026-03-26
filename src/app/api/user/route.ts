@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUserLocation, usernameExists } from "@/lib/r2";
+import { getUserLocation, usernameExists } from "@/lib/kv";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);

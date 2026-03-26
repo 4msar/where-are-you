@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import dynamic from "next/dynamic";
 import { generateUsername, generateDisplayName } from "@/lib/username";
-import type { UserLocation } from "@/lib/r2";
+import type { UserLocation } from "@/lib/kv";
 import { UserProfile } from "@/components/UserProfile";
 import { Toaster } from "@/components/ui/toaster";
 import { toast } from "@/hooks/use-toast";
@@ -68,7 +68,7 @@ export default function HomePage() {
     }
   }, []);
 
-  // Save location to R2
+  // Save location to Cloudflare KV
   const saveLocation = useCallback(
     async (lat: number, lng: number, userData: StoredUser) => {
       setIsUpdating(true);
