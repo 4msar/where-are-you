@@ -16,8 +16,8 @@ const MapView = dynamic(
 
 const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
 const USER_STORAGE_KEY = "where-are-you:username";
-const LOCATION_UPDATE_INTERVAL = 30_000;
-const IDLE_TIMEOUT_MS = 60_000;
+const LOCATION_UPDATE_INTERVAL = 300_000; // 5 minutes
+const IDLE_TIMEOUT_MS = 60_000; // 1 minute of inactivity before marking user as idle
 
 type UserPresenceStatus = "active" | "idle" | "left";
 
