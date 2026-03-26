@@ -18,6 +18,9 @@ const MapView = dynamic(
 const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
 const USER_STORAGE_KEY = "where-are-you:username";
 const LOCATION_UPDATE_INTERVAL = 30_000; // 30 seconds
+const IDLE_TIMEOUT_MS = 60_000; // 60 seconds
+
+type UserPresenceStatus = "active" | "idle" | "left";
 
 interface UserIdentity {
     username: string;
@@ -37,11 +40,18 @@ export default function HomePage() {
     const [isUpdating, setIsUpdating] = useState(false);
     const [profileHydrated, setProfileHydrated] = useState(false);
     const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const userRef = useRef<UserIdentity | null>(null);
+    const locationRef = useRef<UserLocation | null>(null);
+    const presenceRef = useRef<UserPresenceStatus>("active");
 
     useEffect(() => {
         userRef.current = user;
     }, [user]);
+
+    useEffect(() => {
+        locationRef.current = currentLocation;
+    }, [currentLocation]);
 
     // Initialize user from localStorage username and hydrate profile from KV.
     useEffect(() => {
@@ -105,7 +115,12 @@ export default function HomePage() {
 
     // Save location to Cloudflare KV
     const saveLocation = useCallback(
-        async (lat: number, lng: number, userData: UserIdentity) => {
+        async (
+            lat: number,
+            lng: number,
+            userData: UserIdentity,
+            status: UserPresenceStatus = "active",
+        ) => {
             setIsUpdating(true);
             try {
                 const res = await fetch("/api/location", {
@@ -116,6 +131,7 @@ export default function HomePage() {
                         displayName: userData.displayName,
                         avatarUrl: userData.avatarUrl || undefined,
                         location: { lat, lng },
+                        status,
                     }),
                 });
 
@@ -124,6 +140,7 @@ export default function HomePage() {
                         username: userData.username,
                         displayName: userData.displayName,
                         avatarUrl: userData.avatarUrl || undefined,
+                        status,
                         location: { lat, lng },
                         lastUpdated: new Date().toISOString(),
                     };
@@ -138,6 +155,44 @@ export default function HomePage() {
                 });
             } finally {
                 setIsUpdating(false);
+            }
+        },
+        [fetchAllUsers],
+    );
+
+    const syncPresenceStatus = useCallback(
+        async (status: UserPresenceStatus) => {
+            const activeUser = userRef.current;
+            const activeLocation = locationRef.current;
+            if (!activeUser || !activeLocation) return;
+
+            try {
+                const res = await fetch("/api/location", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        username: activeUser.username,
+                        displayName: activeUser.displayName,
+                        avatarUrl: activeUser.avatarUrl || undefined,
+                        location: activeLocation.location,
+                        status,
+                    }),
+                });
+
+                if (res.ok) {
+                    setCurrentLocation((prev) =>
+                        prev
+                            ? {
+                                  ...prev,
+                                  status,
+                                  lastUpdated: new Date().toISOString(),
+                              }
+                            : prev,
+                    );
+                    await fetchAllUsers();
+                }
+            } catch {
+                // silently fail for background status sync
             }
         },
         [fetchAllUsers],
@@ -161,7 +216,7 @@ export default function HomePage() {
                 async (position) => {
                     setLocationStatus("granted");
                     const { latitude, longitude } = position.coords;
-                    await saveLocation(latitude, longitude, userData);
+                    await saveLocation(latitude, longitude, userData, "active");
 
                     // Set up periodic location updates
                     if (intervalRef.current) clearInterval(intervalRef.current);
@@ -174,6 +229,7 @@ export default function HomePage() {
                                         pos.coords.latitude,
                                         pos.coords.longitude,
                                         activeUser,
+                                        "active",
                                     );
                                 }
                             },
@@ -224,6 +280,106 @@ export default function HomePage() {
     useEffect(() => {
         return () => {
             if (intervalRef.current) clearInterval(intervalRef.current);
+            if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+        };
+    }, []);
+
+    useEffect(() => {
+        if (!user || locationStatus !== "granted") return;
+
+        const setIdle = () => {
+            if (presenceRef.current === "idle") return;
+            presenceRef.current = "idle";
+            void syncPresenceStatus("idle");
+        };
+
+        const restartIdleTimer = () => {
+            if (idleTimerRef.current) {
+                clearTimeout(idleTimerRef.current);
+            }
+            idleTimerRef.current = setTimeout(setIdle, IDLE_TIMEOUT_MS);
+        };
+
+        const setActive = () => {
+            if (document.visibilityState === "hidden") return;
+
+            const changed = presenceRef.current !== "active";
+            presenceRef.current = "active";
+            restartIdleTimer();
+
+            if (changed) {
+                void syncPresenceStatus("active");
+            }
+        };
+
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === "hidden") {
+                setIdle();
+                return;
+            }
+            setActive();
+        };
+
+        const activityEvents: Array<keyof WindowEventMap> = [
+            "mousemove",
+            "mousedown",
+            "keydown",
+            "touchstart",
+            "scroll",
+        ];
+
+        for (const eventName of activityEvents) {
+            window.addEventListener(eventName, setActive, { passive: true });
+        }
+        document.addEventListener("visibilitychange", handleVisibilityChange);
+        restartIdleTimer();
+
+        return () => {
+            for (const eventName of activityEvents) {
+                window.removeEventListener(eventName, setActive);
+            }
+            document.removeEventListener(
+                "visibilitychange",
+                handleVisibilityChange,
+            );
+            if (idleTimerRef.current) {
+                clearTimeout(idleTimerRef.current);
+                idleTimerRef.current = null;
+            }
+        };
+    }, [user, locationStatus, syncPresenceStatus]);
+
+    useEffect(() => {
+        const handlePageHide = () => {
+            presenceRef.current = "left";
+            const activeUser = userRef.current;
+            const activeLocation = locationRef.current;
+            if (!activeUser || !activeLocation) return;
+
+            const payload = JSON.stringify({
+                username: activeUser.username,
+                displayName: activeUser.displayName,
+                avatarUrl: activeUser.avatarUrl || undefined,
+                location: activeLocation.location,
+                status: "left",
+            });
+
+            if (navigator.sendBeacon) {
+                navigator.sendBeacon("/api/location", payload);
+                return;
+            }
+
+            void fetch("/api/location", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: payload,
+                keepalive: true,
+            });
+        };
+
+        window.addEventListener("pagehide", handlePageHide);
+        return () => {
+            window.removeEventListener("pagehide", handlePageHide);
         };
     }, []);
 
@@ -235,10 +391,30 @@ export default function HomePage() {
         ) => {
             if (!user) return;
 
+            const normalizedUsername = newUsername.trim();
+            const normalizedDisplayName = newDisplayName.trim();
+            const normalizedAvatarUrl = newAvatarUrl.trim();
+
+            const profileRes = await fetch("/api/user", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    oldUsername: user.username,
+                    newUsername: normalizedUsername,
+                    displayName: normalizedDisplayName,
+                    avatarUrl: normalizedAvatarUrl,
+                }),
+            });
+
+            if (!profileRes.ok) {
+                const errorData = await profileRes.json().catch(() => ({}));
+                throw new Error(errorData.error ?? "Failed to update user");
+            }
+
             const updatedUser: UserIdentity = {
-                username: newUsername,
-                displayName: newDisplayName,
-                avatarUrl: newAvatarUrl,
+                username: normalizedUsername,
+                displayName: normalizedDisplayName,
+                avatarUrl: normalizedAvatarUrl,
             };
 
             localStorage.setItem(USER_STORAGE_KEY, updatedUser.username);
@@ -251,6 +427,7 @@ export default function HomePage() {
                     currentLocation.location.lat,
                     currentLocation.location.lng,
                     updatedUser,
+                    "active",
                 );
             } else {
                 requestLocation(updatedUser);

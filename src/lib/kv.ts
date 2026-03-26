@@ -2,6 +2,7 @@ export interface UserLocation {
     username: string;
     displayName: string;
     avatarUrl?: string;
+    status: "active" | "idle" | "left";
     location: {
         lat: number;
         lng: number;
@@ -41,6 +42,20 @@ export async function saveUserLocation(data: UserLocation): Promise<void> {
     if (!res.ok) {
         const text = await res.text();
         throw new Error(`KV write failed (${res.status}): ${text}`);
+    }
+}
+
+export async function deleteUserLocation(username: string): Promise<void> {
+    const url = `${KV_BASE_URL()}/values/${encodeURIComponent(username)}`;
+    const res = await fetch(url, {
+        method: "DELETE",
+        headers: kvAuthHeader(),
+    });
+
+    if (res.status === 404) return;
+    if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`KV delete failed (${res.status}): ${text}`);
     }
 }
 
@@ -101,4 +116,46 @@ export async function getAllUserLocations(): Promise<UserLocation[]> {
 export async function usernameExists(username: string): Promise<boolean> {
     const existing = await getUserLocation(username);
     return existing !== null;
+}
+
+export async function upsertUserProfile(options: {
+    oldUsername: string;
+    newUsername?: string;
+    displayName?: string;
+    avatarUrl?: string;
+    status?: UserLocation["status"];
+}): Promise<UserLocation> {
+    const existing = await getUserLocation(options.oldUsername);
+    if (!existing) {
+        throw new Error("User not found");
+    }
+
+    const targetUsername =
+        options.newUsername && options.newUsername.trim()
+            ? options.newUsername.trim()
+            : existing.username;
+
+    const updated: UserLocation = {
+        ...existing,
+        username: targetUsername,
+        displayName:
+            typeof options.displayName === "string" &&
+            options.displayName.trim().length > 0
+                ? options.displayName.trim()
+                : existing.displayName,
+        avatarUrl:
+            typeof options.avatarUrl === "string"
+                ? options.avatarUrl.trim() || undefined
+                : existing.avatarUrl,
+        status: options.status ?? existing.status ?? "active",
+        lastUpdated: new Date().toISOString(),
+    };
+
+    await saveUserLocation(updated);
+
+    if (targetUsername !== options.oldUsername) {
+        await deleteUserLocation(options.oldUsername);
+    }
+
+    return updated;
 }

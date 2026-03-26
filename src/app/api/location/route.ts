@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { saveUserLocation, getAllUserLocations } from "@/lib/kv";
+import {
+    saveUserLocation,
+    getAllUserLocations,
+    getUserLocation,
+} from "@/lib/kv";
 
 export async function GET() {
     try {
@@ -17,13 +21,29 @@ export async function GET() {
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const { username, displayName, avatarUrl, location } = body;
+        const { username, displayName, avatarUrl, location, status } = body;
+
+        const normalizedStatus =
+            status === "active" || status === "idle" || status === "left"
+                ? status
+                : "active";
+
+        const existing = username ? await getUserLocation(username) : null;
+        const resolvedLocation =
+            typeof location?.lat === "number" &&
+            typeof location?.lng === "number"
+                ? location
+                : existing?.location;
+        const resolvedDisplayName =
+            typeof displayName === "string" && displayName.trim().length > 0
+                ? displayName
+                : existing?.displayName;
 
         if (
             !username ||
-            !displayName ||
-            typeof location?.lat !== "number" ||
-            typeof location?.lng !== "number"
+            !resolvedDisplayName ||
+            typeof resolvedLocation?.lat !== "number" ||
+            typeof resolvedLocation?.lng !== "number"
         ) {
             return NextResponse.json(
                 {
@@ -45,9 +65,11 @@ export async function POST(request: NextRequest) {
 
         await saveUserLocation({
             username,
-            displayName,
-            avatarUrl: typeof avatarUrl === "string" ? avatarUrl : undefined,
-            location,
+            displayName: resolvedDisplayName,
+            avatarUrl:
+                typeof avatarUrl === "string" ? avatarUrl : existing?.avatarUrl,
+            status: normalizedStatus,
+            location: resolvedLocation,
             lastUpdated: new Date().toISOString(),
         });
 
