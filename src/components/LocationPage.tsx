@@ -331,11 +331,23 @@ export function LocationPage({ routeUsername }: LocationPageProps) {
         if (!routeUsernameNormalized) {
             setCanShareLocation(true);
             setProfileHydrated(false);
+            setLocationStatus("idle");
             setOnboardingUsername("");
             setOnboardingError("");
-            setOnboardingOpen(true);
+
+            if (storedUsername) {
+                setOnboardingOpen(false);
+                void hydrateLandingUser(storedUsername);
+            } else {
+                setUser(null);
+                setCurrentLocation(null);
+                setAllUsers([]);
+                setOnboardingOpen(true);
+            }
             return;
         }
+
+        setOnboardingOpen(false);
 
         const hydrateRouteUser = async () => {
             try {
@@ -403,7 +415,7 @@ export function LocationPage({ routeUsername }: LocationPageProps) {
         };
 
         void hydrateRouteUser();
-    }, [routeUsernameNormalized]);
+    }, [hydrateLandingUser, routeUsernameNormalized]);
 
     useEffect(() => {
         if (
