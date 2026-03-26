@@ -25,6 +25,9 @@ function UserMarker({
 }) {
     const [infoOpen, setInfoOpen] = useState(false);
     const [markerRef, marker] = useAdvancedMarkerRef();
+    const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null);
+    const hasAvatar =
+        Boolean(user.avatarUrl) && failedAvatarUrl !== user.avatarUrl;
 
     return (
         <>
@@ -41,11 +44,23 @@ function UserMarker({
                             : "bg-white border-gray-300"
                     }`}
                 >
-                    <span
-                        className={`text-sm font-bold ${isCurrentUser ? "text-white" : "text-gray-700"}`}
-                    >
-                        {user.displayName.charAt(0).toUpperCase()}
-                    </span>
+                    {hasAvatar ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                            src={user.avatarUrl}
+                            alt={`${user.displayName} avatar`}
+                            className="w-full h-full rounded-full object-cover"
+                            onError={() =>
+                                setFailedAvatarUrl(user.avatarUrl ?? null)
+                            }
+                        />
+                    ) : (
+                        <span
+                            className={`text-sm font-bold ${isCurrentUser ? "text-white" : "text-gray-700"}`}
+                        >
+                            {user.displayName.charAt(0).toUpperCase()}
+                        </span>
+                    )}
                     {isCurrentUser && (
                         <span className="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-white animate-pulse" />
                     )}
@@ -57,7 +72,18 @@ function UserMarker({
                     anchor={marker}
                     onCloseClick={() => setInfoOpen(false)}
                 >
-                    <div className="p-1 min-w-[120px]">
+                    <div className="p-1 min-w-30">
+                        {hasAvatar && (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                                src={user.avatarUrl}
+                                alt={`${user.displayName} avatar`}
+                                className="w-10 h-10 rounded-full object-cover mb-2"
+                                onError={() =>
+                                    setFailedAvatarUrl(user.avatarUrl ?? null)
+                                }
+                            />
+                        )}
                         <p className="font-semibold text-gray-800">
                             {user.displayName}
                         </p>
