@@ -34,9 +34,9 @@ const MapView = dynamic(
 
 const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
 const USER_STORAGE_KEY = "where-are-you:username";
-const LOCATION_UPDATE_INTERVAL = 300_000; // 5 minutes
+const LOCATION_UPDATE_INTERVAL = 60_000; // 1 minutes
 const IDLE_TIMEOUT_MS = 60_000; // 1 minute of inactivity before marking user as idle
-const INACTIVE_USER_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
+const INACTIVE_USER_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
 
 type UserPresenceStatus = "active" | "idle" | "left";
 
@@ -681,7 +681,7 @@ export function LocationPage({ routeUsername }: LocationPageProps) {
                             )}
                         </div>
 
-                        <DialogFooter>
+                        <DialogFooter className="gap-2">
                             <Button
                                 variant="outline"
                                 onClick={handleContinueAsNew}
