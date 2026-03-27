@@ -121,10 +121,15 @@ function UserMarker({
                                 },
                             )}
                         </p>
+                        <p className="text-xs text-gray-400 mt-1">
+                            {user.location.lat.toFixed(6)},{" "}
+                            {user.location.lng.toFixed(6)}
+                        </p>
                         <a
                             href={`https://www.google.com/maps?q=${encodeURIComponent(user.location.lat)},${encodeURIComponent(user.location.lng)}`}
                             target="_blank"
                             rel="noopener noreferrer"
+                            aria-label="View location in Google Maps"
                             className="text-xs text-blue-500 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 mt-2 inline-block"
                         >
                             Open in Google Maps
